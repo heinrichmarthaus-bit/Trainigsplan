@@ -168,9 +168,6 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
 <dialog id="settings">
   <h2>Einstellungen</h2>
   <p id="cfgWho"></p>
-  <label for="cfgUrl">Web-App-URL (Apps Script)</label>
-  <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
-  <p>Nur nötig, wenn die URL nicht schon fest in der Seite eingetragen ist.</p>
   <label for="cfgStart">Planstart (für den 8-Wochen-Zyklus)</label>
   <input id="cfgStart" type="date">
   <p>Leer lassen: Der Zyklus startet mit deinem ersten Eintrag. Woche 8 ist jeweils die Entlastungswoche.</p>
@@ -194,7 +191,7 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
   </div>
   <form id="pkForm" hidden>
     <h2>Eigene Übung erstellen</h2>
-    <p>Eigene Übungen haben keine Grafik und stehen allen Nutzern in der Datenbank zur Verfügung.</p>
+    <p>Eigene Übungen haben keine Grafik und sind zuerst nur für dich sichtbar. Teilen kannst du sie unter „Plan“ ganz unten bei „Eigene Übungen“.</p>
     <label for="nfName">Name</label>
     <input id="nfName" required maxlength="40" placeholder="z. B. Kurzhantel-Rudern auf der Schrägbank">
     <div class="grid2" style="margin-top:0">
@@ -217,6 +214,19 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
       <button type="submit" class="pri">Erstellen und hinzufügen</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="shareDlg">
+  <h2>Übung teilen</h2>
+  <p id="shName"></p>
+  <label class="chkline"><input type="checkbox" id="shAll"> Mit allen Nutzern teilen</label>
+  <label for="shNames">Oder nur mit bestimmten Nutzern (Namen mit Komma getrennt)</label>
+  <input id="shNames" autocomplete="off" autocapitalize="none" placeholder="z. B. max, tom">
+  <p>Beides leer lassen = nur für dich sichtbar. Wer die Übung schon im Plan hat, verliert sie, wenn du das Teilen beendest. Seine Einträge bleiben gespeichert.</p>
+  <div class="row">
+    <button id="shCancel">Abbrechen</button>
+    <button id="shSave" class="pri">Speichern</button>
+  </div>
 </dialog>
 
 <script>
@@ -496,7 +506,8 @@ function loadCustoms(list){
     if (!c || !c.id) return;
     CUSTOM[c.id] = {name:String(c.name), g:c.g || 'Eigene', custom:true, sets:int(c.sets,3), min:int(c.min,8), max:int(c.max,12),
       perSide: c.perSide === true || c.perSide === 'ja', mode: c.art === 'zeit' ? 'time' : undefined, bw: c.art === 'koerper',
-      cues: String(c.cues || '').split('\n').map(x => x.trim()).filter(Boolean)};
+      cues: String(c.cues || '').split('\n').map(x => x.trim()).filter(Boolean),
+      mine: c.mine !== false, by: String(c.by || ''), share: String(c.share || '')};
   });
 }
 
@@ -548,7 +559,7 @@ const Local = {
 class AuthError extends Error {}
 const Store = {
   cfg(){ return lsGet('tt_cfg', {}); },
-  url(){ return (this.cfg().url || API_URL || '').trim(); },
+  url(){ return (API_URL || '').trim(); },
   session(){ return lsGet('tt_session', null); },
   /* local = Testmodus auf dem Gerät, login = Anmeldung nötig, remote = angemeldet */
   mode(){ if (!this.url() || this.cfg().local) return 'local'; return this.session() ? 'remote' : 'login'; },
@@ -567,7 +578,8 @@ const Store = {
   },
   save(b){ return this.mode() === 'local' ? Local.save(b) : this.authed(Object.assign({action:'save'}, b)); },
   savePlan(plan){ return this.mode() === 'local' ? Local.savePlan(plan) : this.authed({action:'savePlan', plan}); },
-  saveExercise(ex){ return this.mode() === 'local' ? Local.saveExercise(ex) : this.authed({action:'saveExercise', ex}); }
+  saveExercise(ex){ return this.mode() === 'local' ? Local.saveExercise(ex) : this.authed({action:'saveExercise', ex}); },
+  shareExercise(id, all, names){ return this.authed({action:'shareExercise', id, all, names}); }
 };
 
 /* ===================== Figuren ===================== */
@@ -796,7 +808,7 @@ function exCard(entry){
   const pause = c.time ? 'Pause 60–90 s' : c.min <= 8 ? 'Pause 2–3 min' : 'Pause 60–90 s';
   const cues = (ex.warm ? [WARM] : []).concat(ex.cues || []);
   const head = `<h3>${esc(ex.name)}</h3>
-        <span class="tag">Ziel: ${c.sets} × ${c.min}–${c.max} ${unit}${c.perSide ? ' pro Seite' : ''}</span>${c.deload ? '<span class="tag dlt">Entlastung</span>' : ''}<span class="tag pause">${pause}</span>${c.opt ? '<span class="tag opt">optional</span>' : ''}${ex.custom ? '<span class="tag opt">eigene Übung</span>' : ''}${today ? '<span class="tag ok">✓ gespeichert</span>' : ''}
+        <span class="tag">Ziel: ${c.sets} × ${c.min}–${c.max} ${unit}${c.perSide ? ' pro Seite' : ''}</span>${c.deload ? '<span class="tag dlt">Entlastung</span>' : ''}<span class="tag pause">${pause}</span>${c.opt ? '<span class="tag opt">optional</span>' : ''}${ex.custom ? `<span class="tag opt">${ex.mine ? 'eigene Übung' : 'von ' + esc(ex.by)}</span>` : ''}${today ? '<span class="tag ok">✓ gespeichert</span>' : ''}
         <div class="last">Letztes Mal: ${lastTxt}</div>${hint}`;
   return `<section class="card">
     ${ex.fig ? `<div class="ex-top">${figSVG(id, ex.fig, ex.name)}<div class="ex-info">${head}</div></div>` : `<div class="ex-info">${head}</div>`}
@@ -943,7 +955,7 @@ function dayEditor(d){
       const u = ex.mode === 'time' ? 's' : 'Wdh';
       const range = ex.stages ? `<span class="note">Ziel kommt aus der Stufe</span>` :
         `<label>${u} von<input type="text" inputmode="numeric" data-pe="min" data-d="${d}" data-i="${i}" value="${int(e.min, ex.min)}"></label><label>${u} bis<input type="text" inputmode="numeric" data-pe="max" data-d="${d}" data-i="${i}" value="${int(e.max, ex.max)}"></label>`;
-      return `<div class="pex"><div class="pex-h"><span class="pn">${esc(ex.name)}${ex.custom ? '<small>eigene</small>' : ''}${ex.perSide ? '<small>pro Seite</small>' : ''}</span>
+      return `<div class="pex"><div class="pex-h"><span class="pn">${esc(ex.name)}${ex.custom ? (ex.mine ? '<small>eigene</small>' : '<small>von ' + esc(ex.by) + '</small>') : ''}${ex.perSide ? '<small>pro Seite</small>' : ''}</span>
         <span class="pbtn"><button data-mv="-1" data-d="${d}" data-i="${i}" aria-label="Nach oben">↑</button><button data-mv="1" data-d="${d}" data-i="${i}" aria-label="Nach unten">↓</button><button data-rm data-d="${d}" data-i="${i}" aria-label="Entfernen">✕</button></span></div>
         <div class="pex-f"><label>Sätze<input type="text" inputmode="numeric" data-pe="sets" data-d="${d}" data-i="${i}" value="${int(e.sets, ex.sets)}"></label>${range}
         <label class="chk"><input type="checkbox" data-pe="opt" data-d="${d}" data-i="${i}" ${e.opt ? 'checked' : ''}>optional</label></div></div>`;
@@ -963,7 +975,7 @@ function renderEditor(){
   $('#main').innerHTML = `<section class="card"><strong>Dein Wochenplan</strong>
       <p class="lbl" style="margin-top:4px">Änderungen gelten ab dem Speichern. Alte Einträge bleiben erhalten, solange die Übung gleich bleibt.</p>
       <div class="row" style="margin-top:8px"><button class="btn" data-tpl="default">Vorlage laden</button><button class="btn" data-tpl="empty">Leerer Plan</button><button class="btn" data-cancel>Abbrechen</button></div></section>` +
-    ORDER.map(dayEditor).join('');
+    ORDER.map(dayEditor).join('') + customCard();
   $('#save').textContent = 'Plan speichern';
   $('#savebar').hidden = false;
 }
@@ -988,6 +1000,49 @@ async function savePlan(){
   finally { btn.disabled = false; }
 }
 
+/* Eigene Übungen: Übersicht und Teilen */
+function shareText(ex){
+  if (!ex.share) return 'nur für dich sichtbar';
+  return ex.share === 'alle' ? 'mit allen geteilt' : 'geteilt mit: ' + ex.share;
+}
+function customCard(){
+  const mine = Object.entries(CUSTOM).filter(([, ex]) => ex.mine).sort((a, b) => a[1].name.localeCompare(b[1].name, 'de'));
+  const others = Object.values(CUSTOM).filter(ex => !ex.mine);
+  if (!mine.length && !others.length) return '';
+  const local = Store.mode() === 'local';
+  const rows = mine.map(([id, ex]) => `<div class="pex"><div class="pex-h"><span class="pn">${esc(ex.name)}<small>${local ? 'nur auf diesem Gerät' : esc(shareText(ex))}</small></span>
+      ${local ? '' : `<span class="pbtn"><button data-share="${esc(id)}" style="width:auto;padding:0 10px">Teilen</button></span>`}</div></div>`).join('');
+  return `<section class="card"><strong>Eigene Übungen</strong>
+    <p class="lbl" style="margin-top:4px">${local ? 'Teilen geht nur mit Konto.' : 'Deine eigenen Übungen sieht zuerst nur du. Hier kannst du sie mit anderen teilen.'}</p>
+    ${rows || '<p class="lbl">Du hast noch keine eigenen Übungen.</p>'}
+    ${others.length ? `<p class="lbl" style="margin-top:12px">Mit dir geteilt: ${others.map(ex => esc(ex.name) + ' (von ' + esc(ex.by) + ')').join(', ')}</p>` : ''}
+  </section>`;
+}
+let shareId = null;
+const shareDlg = $('#shareDlg');
+function openShare(id){
+  const ex = CUSTOM[id]; if (!ex) return; shareId = id;
+  $('#shName').textContent = ex.name + ': ' + shareText(ex);
+  $('#shAll').checked = ex.share === 'alle';
+  $('#shNames').value = ex.share && ex.share !== 'alle' ? ex.share : '';
+  $('#shNames').disabled = $('#shAll').checked;
+  shareDlg.showModal();
+}
+$('#shAll').addEventListener('change', e => { $('#shNames').disabled = e.target.checked; });
+$('#shCancel').addEventListener('click', () => shareDlg.close());
+$('#shSave').addEventListener('click', async () => {
+  const btn = $('#shSave'); btn.disabled = true;
+  try {
+    const j = await Store.shareExercise(shareId, $('#shAll').checked, $('#shNames').value);
+    const c = (STATE.customs || []).find(x => x.id === shareId); if (c) c.share = j.share;
+    loadCustoms(STATE.customs); shareDlg.close(); renderEditor();
+    toast(j.unknown && j.unknown.length ? 'Nicht gefunden: ' + j.unknown.join(', ') : 'Gespeichert ✓', !!(j.unknown && j.unknown.length));
+  } catch (e){
+    if (e instanceof AuthError){ shareDlg.close(); lsDel('tt_session'); renderAuth('login'); }
+    toast('Teilen fehlgeschlagen: ' + e.message, true);
+  } finally { btn.disabled = false; }
+});
+
 /* Übungsauswahl */
 const picker = $('#picker');
 function openPicker(d){
@@ -1005,7 +1060,7 @@ function renderPicker(){
     .sort((a, b) => a[1].name.localeCompare(b[1].name, 'de'));
   $('#pkList').innerHTML = all.length ? all.map(([id, ex]) => {
     const u = ex.mode === 'time' ? 's' : 'Wdh';
-    return `<button type="button" class="pkitem" data-pick="${esc(id)}" ${used.has(id) ? 'disabled' : ''}><span>${esc(ex.name)}<small>${esc(ex.g)} · ${ex.sets} × ${ex.min}–${ex.max} ${u}${ex.perSide ? ' pro Seite' : ''}${ex.custom ? ' · eigene, ohne Grafik' : ''}${used.has(id) ? ' · schon im Plan' : ''}</small></span><b>+</b></button>`;
+    return `<button type="button" class="pkitem" data-pick="${esc(id)}" ${used.has(id) ? 'disabled' : ''}><span>${esc(ex.name)}<small>${esc(ex.g)} · ${ex.sets} × ${ex.min}–${ex.max} ${u}${ex.perSide ? ' pro Seite' : ''}${ex.custom ? (ex.mine ? ' · eigene, ohne Grafik' : ' · von ' + esc(ex.by) + ', ohne Grafik') : ''}${used.has(id) ? ' · schon im Plan' : ''}</small></span><b>+</b></button>`;
   }).join('') : '<p style="padding:12px;margin:0">Nichts gefunden. Erstelle eine eigene Übung.</p>';
 }
 $('#pkSearch').addEventListener('input', renderPicker);
@@ -1033,7 +1088,7 @@ $('#pkForm').addEventListener('submit', async e => {
   const btn = e.submitter || $('#pkForm .pri'); btn.disabled = true;
   try {
     const j = await Store.saveExercise(ex);
-    STATE.customs = (STATE.customs || []).concat([Object.assign({id:j.id}, ex)]);
+    STATE.customs = (STATE.customs || []).concat([Object.assign({id:j.id, mine:true, share:''}, ex)]);
     loadCustoms(STATE.customs);
     const p = EDIT[pickDay]; p.ex = p.ex || []; p.ex.push({id:j.id});
     picker.close(); renderEditor(); toast('Übung erstellt ✓');
@@ -1090,6 +1145,7 @@ $('#main').addEventListener('click', e => {
   }
   if (b.hasAttribute('data-cancel')){ VIEW = 'log'; render(); return; }
   if (b.dataset.add !== undefined){ openPicker(b.dataset.add); return; }
+  if (b.dataset.share){ openShare(b.dataset.share); return; }
   const d = b.dataset.d, i = +b.dataset.i; if (d === undefined) return;
   const list = EDIT[d].ex;
   if (b.hasAttribute('data-rm')) list.splice(i, 1);
@@ -1149,20 +1205,19 @@ $('#date').addEventListener('change', e => { if (!e.target.value) return; curDat
 const dlg = $('#settings');
 $('#openSettings').addEventListener('click', () => {
   const c = Store.cfg(), m = Store.mode();
-  $('#cfgUrl').value = c.url || ''; $('#cfgUrl').placeholder = API_URL || 'https://script.google.com/macros/s/…/exec';
   $('#cfgStart').value = c.start || '';
   $('#cfgWho').textContent = m === 'remote' ? 'Angemeldet als ' + Store.session().user + '.' : m === 'local' ? 'Testmodus: Daten bleiben nur auf diesem Gerät.' : 'Nicht angemeldet.';
   $('#cfgLogout').textContent = m === 'local' && Store.url() ? 'Zur Anmeldung' : 'Abmelden';
   dlg.showModal();
 });
-$('#cfgSave').addEventListener('click', () => { lsSet('tt_cfg', Object.assign(Store.cfg(), {url:$('#cfgUrl').value.trim(), start:$('#cfgStart').value})); dlg.close(); load(); });
+$('#cfgSave').addEventListener('click', () => { const c = Store.cfg(); delete c.url; lsSet('tt_cfg', Object.assign(c, {start:$('#cfgStart').value})); dlg.close(); load(); });
 $('#cfgLogout').addEventListener('click', () => {
   lsDel('tt_session'); const c = Store.cfg(); delete c.local; lsSet('tt_cfg', c);
-  dlg.close(); VIEW = 'log'; if (!Store.url()) toast('Erst die Web-App-URL eintragen', true); load();
+  dlg.close(); VIEW = 'log'; load();
 });
 $('#cfgTest').addEventListener('click', async () => {
-  const url = $('#cfgUrl').value.trim() || API_URL;
-  if (!url){ toast('URL fehlt', true); return; }
+  const url = API_URL;
+  if (!url){ toast('Keine Verbindung eingerichtet', true); return; }
   try { const r = await fetch(url + '?action=ping'); const j = await r.json();
     toast(j.ok ? 'Verbindung klappt ✓' : 'Fehler: ' + j.error, !j.ok); }
   catch (e){ toast('Keine Verbindung: ' + e.message, true); }
