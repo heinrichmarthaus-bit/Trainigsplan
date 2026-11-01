@@ -124,6 +124,9 @@ dialog p{font-size:13px;color:var(--muted)}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .chkline{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px}
 .chkline input{width:auto}
+.steps{margin:0;padding-left:20px;font-size:14px;line-height:1.45}
+.steps li{margin:0 0 8px}
+#help{max-height:88vh;overflow:auto}
 /* Figuren */
 svg.fig .b{stroke:var(--fig);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;fill:none}
 svg.fig .b2{stroke:var(--muted);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;fill:none;opacity:.55}
@@ -148,6 +151,7 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
         <div class="mode" id="mode"></div>
       </div>
       <div class="btns">
+        <button class="iconbtn" id="openHelp" aria-label="Anleitung">?</button>
         <button class="iconbtn" id="openPlan" aria-label="Plan bearbeiten">Plan</button>
         <button class="iconbtn" id="openSettings" aria-label="Einstellungen">⚙︎</button>
       </div>
@@ -164,6 +168,21 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
 <main class="wrap" id="main"><div class="loading">Lade …</div></main>
 <div class="savebar" id="savebar" hidden><button id="save">Training speichern</button></div>
 <div id="toast" role="status"></div>
+
+<dialog id="help">
+  <h2>Kurzanleitung</h2>
+  <ol class="steps">
+    <li><strong>Tag wählen.</strong> Die Seite öffnet automatisch den heutigen Tag. Andere Tage wählst du in der Leiste oben, ein bestimmtes Datum über das Kalenderfeld.</li>
+    <li><strong>Training eintragen.</strong> Pro Satz Gewicht und Wiederholungen eintragen. Das Gewicht vom letzten Mal ist schon vorausgefüllt. Bei einseitigen Übungen gibt es Felder für links und rechts.</li>
+    <li><strong>Speichern.</strong> Unten auf „Training speichern“ tippen. Du kannst auch später nachtragen und erneut speichern, es entstehen keine doppelten Einträge.</li>
+    <li><strong>Fortschritt sehen.</strong> „Letztes Mal“ zeigt deine letzte Einheit. Ein grüner Hinweis „Ziel erreicht“ heißt: Beim nächsten Mal das Gewicht leicht erhöhen.</li>
+    <li><strong>Plan anpassen.</strong> Oben auf „Plan“ tippen. Für jeden Tag Gym, Laufen oder Ruhetag wählen, Übungen hinzufügen, sortieren oder entfernen und Sätze und Wiederholungen ändern. Am Ende „Plan speichern“.</li>
+    <li><strong>Eigene Übungen.</strong> Im Plan bei „Übung hinzufügen“ → „+ Eigene Übung“. Sie sind nur für dich sichtbar. Teilen kannst du sie im Plan ganz unten.</li>
+    <li><strong>Entlastungswoche.</strong> Jede 8. Woche ist automatisch leichter (weniger Sätze, kürzere Läufe), damit sich der Körper erholt. Den Start des Zyklus kannst du im Zahnrad festlegen.</li>
+  </ol>
+  <p><strong>Tipp:</strong> Im Browser über „Teilen → Zum Home-Bildschirm“ kannst du die Seite wie eine App öffnen.</p>
+  <div class="row"><button id="helpClose" class="pri">Los geht's</button></div>
+</dialog>
 
 <dialog id="settings">
   <h2>Einstellungen</h2>
@@ -936,7 +955,7 @@ function renderAuth(tab){
       const j = await Store.post({action: reg ? 'register' : 'login', name: $('#aName').value, password: $('#aPw').value, invite: reg ? $('#aInv').value : ''});
       if (!j.ok) throw new Error(j.error);
       lsSet('tt_session', {user: j.user, key: j.key});
-      toast(reg ? 'Konto erstellt ✓' : 'Angemeldet ✓'); VIEW = 'log'; load();
+      toast(reg ? 'Konto erstellt ✓' : 'Angemeldet ✓'); VIEW = 'log'; await load(); maybeHelp();
     } catch (err){ toast(err.message || 'Keine Verbindung', true); btn.disabled = false; }
   });
 }
@@ -1224,7 +1243,17 @@ $('#cfgTest').addEventListener('click', async () => {
 });
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
-load();
+/* Kurzanleitung: beim ersten Besuch pro Nutzer automatisch, sonst über "?" */
+const helpDlg = $('#help');
+const helpKey = () => 'tt_help_' + ((Store.session() || {}).user || 'local');
+function showHelp(){ if (helpDlg.open) return; helpDlg.showModal(); helpDlg.scrollTop = 0; requestAnimationFrame(() => helpDlg.scrollTop = 0); }
+function maybeHelp(){ if (VIEW !== 'auth' && !lsGet(helpKey(), false)) showHelp(); }
+$('#openHelp').addEventListener('click', showHelp);
+$('#helpClose').addEventListener('click', () => helpDlg.close());
+helpDlg.addEventListener('close', () => lsSet(helpKey(), true));
+helpDlg.addEventListener('click', e => { if (e.target === helpDlg) helpDlg.close(); });
+
+load().then(maybeHelp);
 </script>
 </body>
 </html>
