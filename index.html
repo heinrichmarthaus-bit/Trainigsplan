@@ -187,6 +187,7 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
 <dialog id="settings">
   <h2>Einstellungen</h2>
   <p id="cfgWho"></p>
+  <button type="button" id="cfgHelp" class="btn" style="width:100%">Anleitung anzeigen</button>
   <label for="cfgStart">Planstart (für den 8-Wochen-Zyklus)</label>
   <input id="cfgStart" type="date">
   <p>Leer lassen: Der Zyklus startet mit deinem ersten Eintrag. Woche 8 ist jeweils die Entlastungswoche.</p>
@@ -944,9 +945,11 @@ function renderAuth(tab){
       ${reg ? '<label for="aInv">Einladungscode</label><input id="aInv" autocomplete="off" required>' : ''}
       <button class="go" type="submit">${reg ? 'Konto erstellen' : 'Anmelden'}</button>
     </form>
-    <button class="link" id="aLocal">Ohne Konto auf diesem Gerät testen</button>
+    <button class="link" id="aHelp">Anleitung ansehen</button>
+    <button class="link" id="aLocal" style="margin-top:6px">Ohne Konto auf diesem Gerät testen</button>
   </section>`;
   document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => renderAuth(b.dataset.tab)));
+  $('#aHelp').addEventListener('click', showHelp);
   $('#aLocal').addEventListener('click', () => { lsSet('tt_cfg', Object.assign(Store.cfg(), {local:true})); VIEW = 'log'; load(); });
   $('#authForm').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1249,6 +1252,7 @@ const helpKey = () => 'tt_help_' + ((Store.session() || {}).user || 'local');
 function showHelp(){ if (helpDlg.open) return; helpDlg.showModal(); helpDlg.scrollTop = 0; requestAnimationFrame(() => helpDlg.scrollTop = 0); }
 function maybeHelp(){ if (VIEW !== 'auth' && !lsGet(helpKey(), false)) showHelp(); }
 $('#openHelp').addEventListener('click', showHelp);
+$('#cfgHelp').addEventListener('click', () => { dlg.close(); showHelp(); });
 $('#helpClose').addEventListener('click', () => helpDlg.close());
 helpDlg.addEventListener('close', () => lsSet(helpKey(), true));
 helpDlg.addEventListener('click', e => { if (e.target === helpDlg) helpDlg.close(); });
