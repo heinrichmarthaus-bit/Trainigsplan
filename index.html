@@ -177,7 +177,7 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
     <li><strong>Speichern.</strong> Unten auf „Training speichern“ tippen. Du kannst auch später nachtragen und erneut speichern, es entstehen keine doppelten Einträge.</li>
     <li><strong>Fortschritt sehen.</strong> „Letztes Mal“ zeigt deine letzte Einheit. Ein grüner Hinweis „Ziel erreicht“ heißt: Beim nächsten Mal das Gewicht leicht erhöhen.</li>
     <li><strong>Plan anpassen.</strong> Oben auf „Plan“ tippen. Für jeden Tag Gym, Laufen oder Ruhetag wählen, Übungen hinzufügen, sortieren oder entfernen und Sätze und Wiederholungen ändern. Am Ende „Plan speichern“.</li>
-    <li><strong>Eigene Übungen.</strong> Im Plan bei „Übung hinzufügen“ → „+ Eigene Übung“. Sie sind nur für dich sichtbar. Teilen kannst du sie im Plan ganz unten.</li>
+    <li><strong>Eigene Übungen.</strong> Im Plan bei „Übung hinzufügen“ → „+ Eigene Übung“. Sie sind nur für dich sichtbar. Bearbeiten (✎) und teilen kannst du sie im Plan ganz unten.</li>
     <li><strong>Entlastungswoche.</strong> Jede 8. Woche ist automatisch leichter (weniger Sätze, kürzere Läufe), damit sich der Körper erholt. Den Start des Zyklus kannst du im Zahnrad festlegen.</li>
   </ol>
   <p><strong>Tipp:</strong> Im Browser über „Teilen → Zum Home-Bildschirm“ kannst du die Seite wie eine App öffnen.</p>
@@ -210,8 +210,8 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
     </div>
   </div>
   <form id="pkForm" hidden>
-    <h2>Eigene Übung erstellen</h2>
-    <p>Eigene Übungen haben keine Grafik und sind zuerst nur für dich sichtbar. Teilen kannst du sie unter „Plan“ ganz unten bei „Eigene Übungen“.</p>
+    <h2 id="nfTitle">Eigene Übung erstellen</h2>
+    <p id="nfInfo">Eigene Übungen haben keine Grafik und sind zuerst nur für dich sichtbar. Teilen kannst du sie unter „Plan“ ganz unten bei „Eigene Übungen“.</p>
     <label for="nfName">Name</label>
     <input id="nfName" required maxlength="40" placeholder="z. B. Kurzhantel-Rudern auf der Schrägbank">
     <div class="grid2" style="margin-top:0">
@@ -231,7 +231,7 @@ svg.fig .lb{fill:var(--muted);font-size:11px}
     <textarea id="nfCues" rows="3"></textarea>
     <div class="row">
       <button type="button" id="nfBack">Zurück</button>
-      <button type="submit" class="pri">Erstellen und hinzufügen</button>
+      <button type="submit" class="pri" id="nfSubmit">Erstellen und hinzufügen</button>
     </div>
   </form>
 </dialog>
@@ -574,6 +574,7 @@ const Local = {
     lsSet('tt_local', d); return {ok:true};
   },
   async savePlan(plan){ lsSet('tt_plan', plan); return {ok:true}; },
+  async updateExercise(id, ex){ const l = lsGet('tt_customs', []); const i = l.findIndex(c => c.id === id); if (i < 0) throw new Error('Übung nicht gefunden'); l[i] = Object.assign({}, l[i], ex); lsSet('tt_customs', l); return {ok:true}; },
   async saveExercise(ex){ const l = lsGet('tt_customs', []); const id = 'c_' + Math.random().toString(36).slice(2, 10); l.push(Object.assign({id}, ex)); lsSet('tt_customs', l); return {ok:true, id}; }
 };
 class AuthError extends Error {}
@@ -599,7 +600,12 @@ const Store = {
   save(b){ return this.mode() === 'local' ? Local.save(b) : this.authed(Object.assign({action:'save'}, b)); },
   savePlan(plan){ return this.mode() === 'local' ? Local.savePlan(plan) : this.authed({action:'savePlan', plan}); },
   saveExercise(ex){ return this.mode() === 'local' ? Local.saveExercise(ex) : this.authed({action:'saveExercise', ex}); },
-  shareExercise(id, all, names){ return this.authed({action:'shareExercise', id, all, names}); }
+  shareExercise(id, all, names){ return this.authed({action:'shareExercise', id, all, names}); },
+  async updateExercise(id, ex){
+    if (this.mode() === 'local') return Local.updateExercise(id, ex);
+    try { return await this.authed({action:'updateExercise', id, ex}); }
+    catch (e){ if (e.message === 'Ungültiges Datum') throw new Error('Bitte zuerst die neue Code.gs im Apps Script bereitstellen'); throw e; }
+  }
 };
 
 /* ===================== Figuren ===================== */
@@ -978,7 +984,7 @@ function dayEditor(d){
       const range = ex.stages ? `<span class="note">Ziel kommt aus der Stufe</span>` :
         `<label>${u} von<input type="text" inputmode="numeric" data-pe="min" data-d="${d}" data-i="${i}" value="${int(e.min, ex.min)}"></label><label>${u} bis<input type="text" inputmode="numeric" data-pe="max" data-d="${d}" data-i="${i}" value="${int(e.max, ex.max)}"></label>`;
       return `<div class="pex"><div class="pex-h"><span class="pn">${esc(ex.name)}${ex.custom ? (ex.mine ? '<small>eigene</small>' : '<small>von ' + esc(ex.by) + '</small>') : ''}${ex.perSide ? '<small>pro Seite</small>' : ''}</span>
-        <span class="pbtn"><button data-mv="-1" data-d="${d}" data-i="${i}" aria-label="Nach oben">↑</button><button data-mv="1" data-d="${d}" data-i="${i}" aria-label="Nach unten">↓</button><button data-rm data-d="${d}" data-i="${i}" aria-label="Entfernen">✕</button></span></div>
+        <span class="pbtn">${ex.custom && ex.mine ? `<button data-editex="${esc(e.id)}" aria-label="Übung bearbeiten">✎</button>` : ''}<button data-mv="-1" data-d="${d}" data-i="${i}" aria-label="Nach oben">↑</button><button data-mv="1" data-d="${d}" data-i="${i}" aria-label="Nach unten">↓</button><button data-rm data-d="${d}" data-i="${i}" aria-label="Entfernen">✕</button></span></div>
         <div class="pex-f"><label>Sätze<input type="text" inputmode="numeric" data-pe="sets" data-d="${d}" data-i="${i}" value="${int(e.sets, ex.sets)}"></label>${range}
         <label class="chk"><input type="checkbox" data-pe="opt" data-d="${d}" data-i="${i}" ${e.opt ? 'checked' : ''}>optional</label></div></div>`;
     }).join('') + `<button class="add" data-add="${d}">+ Übung hinzufügen</button>`;
@@ -1033,9 +1039,9 @@ function customCard(){
   if (!mine.length && !others.length) return '';
   const local = Store.mode() === 'local';
   const rows = mine.map(([id, ex]) => `<div class="pex"><div class="pex-h"><span class="pn">${esc(ex.name)}<small>${local ? 'nur auf diesem Gerät' : esc(shareText(ex))}</small></span>
-      ${local ? '' : `<span class="pbtn"><button data-share="${esc(id)}" style="width:auto;padding:0 10px">Teilen</button></span>`}</div></div>`).join('');
+      <span class="pbtn"><button data-editex="${esc(id)}" style="width:auto;padding:0 10px">Bearbeiten</button>${local ? '' : `<button data-share="${esc(id)}" style="width:auto;padding:0 10px">Teilen</button>`}</span></div></div>`).join('');
   return `<section class="card"><strong>Eigene Übungen</strong>
-    <p class="lbl" style="margin-top:4px">${local ? 'Teilen geht nur mit Konto.' : 'Deine eigenen Übungen sieht zuerst nur du. Hier kannst du sie mit anderen teilen.'}</p>
+    <p class="lbl" style="margin-top:4px">${local ? 'Hier kannst du deine eigenen Übungen bearbeiten. Teilen geht nur mit Konto.' : 'Deine eigenen Übungen sieht zuerst nur du. Hier kannst du sie bearbeiten und mit anderen teilen.'}</p>
     ${rows || '<p class="lbl">Du hast noch keine eigenen Übungen.</p>'}
     ${others.length ? `<p class="lbl" style="margin-top:12px">Mit dir geteilt: ${others.map(ex => esc(ex.name) + ' (von ' + esc(ex.by) + ')').join(', ')}</p>` : ''}
   </section>`;
@@ -1093,12 +1099,37 @@ $('#pkList').addEventListener('click', e => {
   picker.close(); renderEditor(); toast(getEx(b.dataset.pick).name + ' hinzugefügt');
 });
 $('#pkClose').addEventListener('click', () => picker.close());
-$('#pkNew').addEventListener('click', () => {
+/* Formular für eigene Übungen: Erstellen (editId = null) oder Bearbeiten */
+let editId = null;
+function fillExForm(ex){
   $('#nfGroup').innerHTML = GROUPS.map(g => `<option>${g}</option>`).join('');
-  $('#nfName').value = $('#pkSearch').value.trim();
+  $('#nfName').value = ex.name || '';
+  $('#nfGroup').value = GROUPS.includes(ex.g) ? ex.g : GROUPS[0];
+  $('#nfArt').value = ['gewicht','koerper','zeit'].includes(ex.art) ? ex.art : 'gewicht';
+  $('#nfSide').checked = ex.perSide === true || ex.perSide === 'ja';
+  $('#nfSets').value = ex.sets ?? 3; $('#nfMin').value = ex.min ?? 8; $('#nfMax').value = ex.max ?? 12;
+  $('#nfCues').value = ex.cues || '';
+}
+function setExFormMode(edit){
+  $('#nfTitle').textContent = edit ? 'Eigene Übung bearbeiten' : 'Eigene Übung erstellen';
+  $('#nfInfo').textContent = edit ? 'Deine bisherigen Einträge bleiben erhalten. Hast du die Übung geteilt, sehen die anderen die Änderung auch.' : 'Eigene Übungen haben keine Grafik und sind zuerst nur für dich sichtbar. Teilen kannst du sie unter „Plan“ ganz unten bei „Eigene Übungen“.';
+  $('#nfSubmit').textContent = edit ? 'Änderungen speichern' : 'Erstellen und hinzufügen';
+  $('#nfBack').textContent = edit ? 'Abbrechen' : 'Zurück';
+}
+function openExEdit(id){
+  const raw = (STATE.customs || []).find(c => c.id === id); if (!raw || !CUSTOM[id] || !CUSTOM[id].mine) return;
+  editId = id; fillExForm(raw); setExFormMode(true);
+  $('#pkBrowse').hidden = true; $('#pkForm').hidden = false; picker.showModal();
+}
+$('#pkNew').addEventListener('click', () => {
+  editId = null; fillExForm({name: $('#pkSearch').value.trim()}); setExFormMode(false);
   $('#pkBrowse').hidden = true; $('#pkForm').hidden = false; $('#nfName').focus();
 });
-$('#nfBack').addEventListener('click', () => { $('#pkForm').hidden = true; $('#pkBrowse').hidden = false; });
+$('#nfBack').addEventListener('click', () => {
+  if (editId){ editId = null; picker.close(); return; }
+  $('#pkForm').hidden = true; $('#pkBrowse').hidden = false;
+});
+picker.addEventListener('close', () => { editId = null; });
 $('#nfArt').addEventListener('change', e => { const t = e.target.value === 'zeit'; $('#nfMin').value = t ? 30 : 8; $('#nfMax').value = t ? 60 : 12; });
 $('#pkForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -1108,6 +1139,29 @@ $('#pkForm').addEventListener('submit', async e => {
   const ex = {name, g:$('#nfGroup').value, art:$('#nfArt').value, perSide:$('#nfSide').checked,
     sets: Math.min(10, Math.max(1, int($('#nfSets').value, 3))), min, max: Math.max(min, int($('#nfMax').value, min)), cues:$('#nfCues').value.trim()};
   const btn = e.submitter || $('#pkForm .pri'); btn.disabled = true;
+  if (editId){
+    const id = editId, old = CUSTOM[id];
+    try {
+      await Store.updateExercise(id, ex);
+      const c = (STATE.customs || []).find(x => x.id === id); if (c) Object.assign(c, ex);
+      loadCustoms(STATE.customs);
+      // Ziel im Plan übernehmen, wo noch das alte Standardziel stand
+      let changed = 0;
+      for (const d of ORDER) for (const en of ((EDIT[d] || {}).ex || [])){
+        if (en.id !== id) continue;
+        if (int(en.sets, old.sets) === old.sets && int(en.min, old.min) === old.min && int(en.max, old.max) === old.max){
+          if (en.sets !== undefined || en.min !== undefined || en.max !== undefined){ en.sets = ex.sets; en.min = ex.min; en.max = ex.max; }
+          changed++;
+        }
+      }
+      picker.close(); renderEditor();
+      toast(changed ? 'Gespeichert ✓ Neues Ziel im Plan übernommen, bitte „Plan speichern“' : 'Gespeichert ✓');
+    } catch (err){
+      if (err instanceof AuthError){ picker.close(); lsDel('tt_session'); renderAuth('login'); }
+      toast('Speichern fehlgeschlagen: ' + err.message, true);
+    } finally { btn.disabled = false; }
+    return;
+  }
   try {
     const j = await Store.saveExercise(ex);
     STATE.customs = (STATE.customs || []).concat([Object.assign({id:j.id, mine:true, share:''}, ex)]);
@@ -1168,6 +1222,7 @@ $('#main').addEventListener('click', e => {
   if (b.hasAttribute('data-cancel')){ VIEW = 'log'; render(); return; }
   if (b.dataset.add !== undefined){ openPicker(b.dataset.add); return; }
   if (b.dataset.share){ openShare(b.dataset.share); return; }
+  if (b.dataset.editex){ openExEdit(b.dataset.editex); return; }
   const d = b.dataset.d, i = +b.dataset.i; if (d === undefined) return;
   const list = EDIT[d].ex;
   if (b.hasAttribute('data-rm')) list.splice(i, 1);
